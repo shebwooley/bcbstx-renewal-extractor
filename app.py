@@ -1,10 +1,8 @@
-import base64
 from pathlib import Path
 import tempfile
 
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 from bcbstx_extractor import run_extraction, build_validation_notes, build_plan_summary_df
 
@@ -23,7 +21,8 @@ st.set_page_config(
 # ── Custom CSS ─────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    .block-container { padding-top: 1.5rem; }
+    /* Give enough top room so the header's rounded corners aren't clipped */
+    .block-container { padding-top: 2rem !important; }
 
     .app-header {
         background: linear-gradient(135deg, #003087 0%, #1a5fb4 100%);
@@ -106,7 +105,6 @@ with btn_col2:
         "🎵 Extract with Music",
         type="secondary",
         use_container_width=True,
-        help="Plays the Jeopardy Think! theme while the extractor runs.",
     )
 
 do_extraction = extract_btn or music_btn
@@ -118,22 +116,13 @@ elif extract_btn:
 if not do_extraction:
     st.stop()
 
-# ── Audio slot — filled before extraction, cleared after to stop playback ──────
+# ── Audio — starts immediately, slot is cleared after extraction to stop it ────
 audio_slot = st.empty()
-
 if st.session_state.play_music:
     mp3_path = Path(__file__).parent / "jeopardy-themelq.mp3"
-    try:
-        mp3_b64 = base64.b64encode(mp3_path.read_bytes()).decode()
-        audio_html = f"""
-        <audio autoplay>
-            <source src="data:audio/mpeg;base64,{mp3_b64}" type="audio/mpeg">
-        </audio>
-        """
+    if mp3_path.exists():
         with audio_slot:
-            components.html(audio_html, height=0)
-    except FileNotFoundError:
-        pass  # MP3 not present — silently skip music
+            st.audio(mp3_path.read_bytes(), format="audio/mpeg", autoplay=True)
 
 # ── Extraction ─────────────────────────────────────────────────────────────────
 with st.spinner("Extracting renewal data… this usually takes about 30 seconds. Hang tight."):
@@ -148,12 +137,12 @@ with st.spinner("Extracting renewal data… this usually takes about 30 seconds.
             excel_bytes = Path(result["excel_path"]).read_bytes()
             json_bytes  = Path(result["json_path"]).read_bytes()
         except Exception as exc:
-            audio_slot.empty()  # stop music on error too
+            audio_slot.empty()
             st.error("The extractor could not process this PDF. See the error details below.")
             st.exception(exc)
             st.stop()
 
-# Stop the music now that extraction is done
+# Stop the music now that extraction is complete
 audio_slot.empty()
 
 st.success("✅ Extraction complete!")
@@ -216,7 +205,17 @@ plan_df = build_plan_summary_df(data)
 if plan_df.empty:
     st.warning("No plans were extracted from this PDF.")
 else:
-    st.dataframe(plan_df, use_container_width=True, hide_index=True)
+    # Format dollar amounts and percentages for display
+    DOLLAR_COLS = {"Current Total", "Renewal Total", "Current EO", "Renewal EO"}
+    PCT_COLS    = {"Total % Change", "EO % Change"}
+    fmt = {}
+    for col in plan_df.columns:
+        if col in PCT_COLS:
+            fmt[col] = "{:.2%}"       # 0.2496 → "24.96%"
+        elif col in DOLLAR_COLS:
+            fmt[col] = "${:,.2f}"     # 1086.49 → "$1,086.49"
+    styled_plan = plan_df.style.format(fmt, na_rep="—")
+    st.dataframe(styled_plan, use_container_width=True, hide_index=True)
 
 # ── Census preview ─────────────────────────────────────────────────────────────
 with st.expander("📋 Census Preview"):
@@ -228,7 +227,7 @@ with st.expander("📋 Census Preview"):
 
 # ── Footer ─────────────────────────────────────────────────────────────────────
 st.markdown(
-    '<p class="footer-cap">BCBSTX Renewal Extractor · No AI used · '
-    'Your file is never saved to our servers — it\'s processed and immediately discarded</p>',
+    '<p class="footer-cap">BCBSTX Renewal Extractor - No AI used - '
+    "Your file is never saved to our servers - it's processed and immediately discarded</p>",
     unsafe_allow_html=True,
 )
