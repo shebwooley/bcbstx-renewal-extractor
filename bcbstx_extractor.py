@@ -42,14 +42,14 @@ def normalize_name(name: Any) -> str | None:
     Normalize names so the plan grids match the census:
     - Remove newlines
     - Collapse multiple spaces
-    - Normalize spaces around commas
+    - Strip commas (so "DE, FLORES, DEBORAH" matches "DE FLORES, DEBORAH")
     - Uppercase so case differences do not matter
     """
     if not name:
         return None
     s = str(name).replace("\n", " ")
     s = " ".join(s.split())
-    s = re.sub(r"\s*,\s*", ", ", s)
+    s = s.replace(",", " ")  # strip commas so compound names match across plan grids and census
     return s.upper()
 
 
