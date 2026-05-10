@@ -352,7 +352,7 @@ def extract_census(pdf: pdfplumber.PDF) -> tuple[dict[str, int], list[dict[str, 
                                 pass
                 continue
 
-            if len(header) >= 7 and header[0] in ("Row", "") and "Coverage Type" in (header[5] or "") and any("Name" in (h or "") for h in header):
+            if len(header) >= 7 and (header[0] or "") in ("Row", "") and "Coverage Type" in (header[5] or "") and any("Name" in (h or "") for h in header):
                 for row in tbl[1:]:
                     if not row or not row[0]:
                         continue
@@ -479,7 +479,8 @@ def build_family_plan_map_df(result: dict[str, Any]) -> pd.DataFrame:
 
 def build_validation_notes(result: dict[str, Any]) -> pd.DataFrame:
     notes = []
-    if not result.get("group_info", {}).get("group_name"):
+    gi = result.get("group_info", {}) or {}
+    if not gi.get("group_name") and not gi.get("mailing_name"):
         notes.append({"Severity": "Warning", "Message": "Group name was not found."})
     if result.get("rating_type") == "unknown":
         notes.append({"Severity": "Warning", "Message": "Rating type could not be identified."})
