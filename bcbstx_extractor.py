@@ -90,8 +90,10 @@ def extract_group_info(pdf: pdfplumber.PDF) -> dict[str, Any]:
         lines = [ln.strip() for ln in block.splitlines() if ln.strip() and not set(ln.strip()) == {"*"}]
         if len(lines) >= 3:
             group["mailing_name"] = lines[0]
-            group["street"] = lines[1]
-            csz = lines[2]
+            # Last line is city/state/zip; everything in between is street
+            # (handles 4-line blocks where suite is on its own line)
+            csz = lines[-1]
+            group["street"] = " ".join(lines[1:-1])
             m = re.match(r"(.+?)\s+([A-Z]{2})\s+(\d{5})", csz)
             if m:
                 group["city"] = m.group(1).title()
@@ -531,7 +533,7 @@ def autosize_excel(path: str | Path) -> None:
             for cell in col[1:]:
                 if isinstance(cell.value, (int, float)):
                     if "%" in header:
-                        cell.number_format = "0.0%"
+                        cell.number_format = "0.00%"
                     elif any(x in header for x in ["Total", "Rate", "EO"]):
                         cell.number_format = "$#,##0.00"
     wb.save(path)
@@ -548,9 +550,21 @@ def save_outputs(data: dict[str, Any], base_filename: str = "bcbstx_extract", ou
     with json_path.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
-    summary = data.get("group_info", {}).copy()
-    summary["rating_type"] = data.get("rating_type")
-    summary["s662chc_eo_composite"] = data.get("s662chc_eo_composite")
+    g = data.get("group_info", {}) or {}
+    # Build summary with important fields first
+    summary = {
+        "group_name":             g.get("group_name"),
+        "account_number":         g.get("account_number"),
+        "renewal_effective_date": g.get("renewal_effective_date"),
+        "rating_area":            g.get("rating_area"),
+        "rating_type":            data.get("rating_type"),
+        "mailing_name":           g.get("mailing_name"),
+        "street":                 g.get("street"),
+        "city":                   g.get("city"),
+        "state":                  g.get("state"),
+        "zip":                    g.get("zip"),
+        "s662chc_eo_composite":   data.get("s662chc_eo_composite"),
+    }
 
     with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
         pd.DataFrame([summary]).to_excel(writer, sheet_name="Summary", index=False)
