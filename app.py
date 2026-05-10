@@ -22,7 +22,7 @@ st.set_page_config(
 st.markdown("""
 <style>
     /* Give enough top room so the header's rounded corners aren't clipped */
-    .block-container { padding-top: 2rem !important; }
+    .block-container { padding-top: 3.5rem !important; }
 
     .app-header {
         background: linear-gradient(135deg, #003087 0%, #1a5fb4 100%);
@@ -153,11 +153,14 @@ census_rows = data.get("census_rows", []) or []
 
 # ── Summary metrics ────────────────────────────────────────────────────────────
 st.markdown("### Group Summary")
-mc1, mc2, mc3, mc4 = st.columns(4)
-mc1.metric("Group",       group.get("group_name") or group.get("mailing_name") or "Not found")
-mc2.metric("Rating Type", str(data.get("rating_type", "unknown")).upper())
-mc3.metric("Plans Found", len(plans))
-mc4.metric("Census Rows", len(census_rows))
+group_display  = group.get("group_name") or group.get("mailing_name") or "Not found"
+rating_area    = group.get("rating_area")
+area_str       = f"  ·  Rating Area {rating_area}" if rating_area else ""
+st.markdown(f"<div style='font-size:1.15rem; font-weight:600; margin-bottom:0.75rem;'>{group_display}{area_str}</div>", unsafe_allow_html=True)
+mc1, mc2, mc3 = st.columns(3)
+mc1.metric("Rating Type", str(data.get("rating_type", "unknown")).upper())
+mc2.metric("Plans Found", len(plans))
+mc3.metric("Census Rows", len(census_rows))
 
 st.markdown("---")
 

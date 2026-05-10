@@ -512,30 +512,56 @@ def build_validation_notes(result: dict[str, Any]) -> pd.DataFrame:
 
 def autosize_excel(path: str | Path) -> None:
     from openpyxl import load_workbook
-    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
     from openpyxl.utils import get_column_letter
 
     wb = load_workbook(path)
-    fill = PatternFill("solid", fgColor="1F4E78")
-    font = Font(color="FFFFFF", bold=True)
+
+    hdr_fill  = PatternFill("solid", fgColor="1F4E78")
+    hdr_font  = Font(color="FFFFFF", bold=True, size=11)
+    alt_fill  = PatternFill("solid", fgColor="EEF2FF")   # light blue-tint for even rows
+    data_font = Font(size=10)
+    thin = Side(style="thin", color="C5CEE0")
+    bdr  = Border(left=thin, right=thin, top=thin, bottom=thin)
+
     for ws in wb.worksheets:
         ws.freeze_panes = "A2"
-        if ws.max_row >= 1:
-            for cell in ws[1]:
-                cell.fill = fill
-                cell.font = font
-                cell.alignment = Alignment(horizontal="center")
+        ws.sheet_view.showGridLines = False
+
+        # Header row
+        ws.row_dimensions[1].height = 26
+        for cell in ws[1]:
+            cell.fill      = hdr_fill
+            cell.font      = hdr_font
+            cell.border    = bdr
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+        # Data rows — alternating shading, centered, bordered
+        for row_idx in range(2, ws.max_row + 1):
+            ws.row_dimensions[row_idx].height = 18
+            row_fill = alt_fill if row_idx % 2 == 0 else PatternFill()
+            for cell in ws[row_idx]:
+                cell.fill      = row_fill
+                cell.font      = data_font
+                cell.border    = bdr
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        # Column widths + number formats
         for col in ws.columns:
-            vals = [str(c.value) for c in col if c.value is not None]
-            width = min(max([len(v) for v in vals] + [10]) + 2, 55)
+            vals  = [str(c.value) for c in col if c.value is not None]
+            width = min(max([len(v) for v in vals] + [10]) + 2, 50)
             ws.column_dimensions[get_column_letter(col[0].column)].width = width
             header = str(ws.cell(row=1, column=col[0].column).value or "")
+            is_enrolled = header.startswith("Enrolled")
             for cell in col[1:]:
                 if isinstance(cell.value, (int, float)):
                     if "%" in header:
                         cell.number_format = "0.00%"
-                    elif any(x in header for x in ["Total", "Rate", "EO"]):
+                    elif any(x in header for x in ["Total", "Rate", "EO", "Composite"]) and not is_enrolled:
                         cell.number_format = "$#,##0.00"
+                    elif is_enrolled:
+                        cell.number_format = "0"   # whole numbers, no decimals
+
     wb.save(path)
 
 
@@ -566,8 +592,23 @@ def save_outputs(data: dict[str, Any], base_filename: str = "bcbstx_extract", ou
         "s662chc_eo_composite":   data.get("s662chc_eo_composite"),
     }
 
+    SUMMARY_RENAME = {
+        "group_name":             "Group Name",
+        "account_number":         "Account Number",
+        "renewal_effective_date": "Renewal Effective Date",
+        "rating_area":            "Rating Area",
+        "rating_type":            "Rating Type",
+        "mailing_name":           "Mailing Name",
+        "street":                 "Street",
+        "city":                   "City",
+        "state":                  "State",
+        "zip":                    "Zip",
+        "s662chc_eo_composite":   "S662CHC EO Composite Rate",
+    }
+    summary_df = pd.DataFrame([summary]).rename(columns=SUMMARY_RENAME)
+
     with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
-        pd.DataFrame([summary]).to_excel(writer, sheet_name="Summary", index=False)
+        summary_df.to_excel(writer, sheet_name="Summary", index=False)
         build_plan_summary_df(data).to_excel(writer, sheet_name="Plan Summary", index=False)
 
         optional_sheets = [
