@@ -42,14 +42,14 @@ def normalize_name(name: Any) -> str | None:
     Normalize names so the plan grids match the census:
     - Remove newlines
     - Collapse multiple spaces
-    - Strip commas (so "DE, FLORES, DEBORAH" matches "DE FLORES, DEBORAH")
+    - Normalize spaces around commas
     - Uppercase so case differences do not matter
     """
     if not name:
         return None
     s = str(name).replace("\n", " ")
     s = " ".join(s.split())
-    s = s.replace(",", " ")  # strip commas so compound names match across plan grids and census
+    s = re.sub(r"\s*,\s*", ", ", s)
     return s.upper()
 
 
@@ -290,19 +290,37 @@ def extract_age_plan_members(pdf: pdfplumber.PDF) -> dict[str, list[dict[str, An
     return plan_members
 
 
+def _alpha_key(name: str | None) -> str:
+    """Name key using only letters — handles compound names with misplaced commas.
+    e.g. 'DE, FLORES, DEBORAH' and 'DE FLORES, DEBORAH' both become 'DE FLORES DEBORAH'."""
+    if not name:
+        return ""
+    return " ".join(re.sub(r"[^A-Za-z]", " ", name).upper().split())
+
+
 def map_age_plans_to_census(census_rows: list[dict[str, Any]], plan_members: dict[str, list[dict[str, Any]]]) -> dict[int, str]:
+    # Build two lookup tables: exact normalized name+DOB, and alpha-only name+DOB
     employee_index: dict[tuple[str | None, str], int] = {}
+    employee_fuzzy: dict[tuple[str, str], int] = {}
     for row in census_rows:
         relationship = str(row.get("relationship", "")).strip().lower()
         if relationship == "employee":
-            key = (normalize_name(row.get("name")), (row.get("dob") or "").strip())
-            employee_index[key] = row.get("family_id")
+            name = row.get("name")
+            dob  = (row.get("dob") or "").strip()
+            fid  = row.get("family_id")
+            employee_index[(normalize_name(name), dob)] = fid
+            employee_fuzzy[(_alpha_key(normalize_name(name)), dob)] = fid
 
     family_plan: dict[int, str] = {}
     for plan_id, members in plan_members.items():
         for member in members:
-            key = (member["name_norm"], member["dob"])
-            fam_id = employee_index.get(key)
+            dob      = member["dob"]
+            name_norm = member["name_norm"]
+            # Try exact match first; fall back to alpha-only (catches compound last names
+            # where the census inserts a comma mid-name, e.g. "DE, FLORES, DEBORAH")
+            fam_id = employee_index.get((name_norm, dob))
+            if fam_id is None:
+                fam_id = employee_fuzzy.get((_alpha_key(name_norm), dob))
             if fam_id is not None:
                 family_plan.setdefault(fam_id, plan_id)
 
