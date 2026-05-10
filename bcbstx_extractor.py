@@ -71,7 +71,7 @@ def extract_group_info(pdf: pdfplumber.PDF) -> dict[str, Any]:
         group["account_number"] = m.group(1).strip()
         group["renewal_effective_date"] = m.group(2).strip()
 
-    m2 = re.search(r"\n([A-Z0-9& ,.'/-]+?)\s+Producer:", text1)
+    m2 = re.search(r"\n([A-Z0-9& ,.'/-]+?)\s+(?:Producer|Agent):", text1)
     if m2:
         group["group_name"] = m2.group(1).strip()
 
@@ -352,7 +352,7 @@ def extract_census(pdf: pdfplumber.PDF) -> tuple[dict[str, int], list[dict[str, 
                                 pass
                 continue
 
-            if len(header) >= 7 and header[0] == "Row" and "Coverage Type" in (header[5] or ""):
+            if len(header) >= 7 and header[0] in ("Row", "") and "Coverage Type" in (header[5] or "") and any("Name" in (h or "") for h in header):
                 for row in tbl[1:]:
                     if not row or not row[0]:
                         continue
