@@ -1,3 +1,4 @@
+import base64
 from pathlib import Path
 import tempfile
 
@@ -22,10 +23,8 @@ st.set_page_config(
 # ── Custom CSS ─────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Hide default Streamlit header padding */
     .block-container { padding-top: 1.5rem; }
 
-    /* App header banner */
     .app-header {
         background: linear-gradient(135deg, #003087 0%, #1a5fb4 100%);
         padding: 1.6rem 2rem 1.4rem;
@@ -46,7 +45,6 @@ st.markdown("""
         line-height: 1.5;
     }
 
-    /* Metric cards */
     [data-testid="metric-container"] {
         background: #f0f4ff;
         border: 1px solid #c7d7f5;
@@ -54,20 +52,12 @@ st.markdown("""
         padding: 0.85rem 1rem;
     }
 
-    /* Download button: full width */
     .stDownloadButton > button {
         width: 100%;
         border-radius: 0.5rem;
         font-weight: 600;
     }
 
-    /* Dataframe container */
-    [data-testid="stDataFrame"] {
-        border-radius: 0.5rem;
-        overflow: hidden;
-    }
-
-    /* Footer caption */
     .footer-cap {
         text-align: center;
         font-size: 0.78rem;
@@ -76,7 +66,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
 
 # ── Header ─────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -87,28 +76,25 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-
 # ── File upload ────────────────────────────────────────────────────────────────
 uploaded_file = st.file_uploader(
     "Upload BCBSTX renewal PDF",
     type=["pdf"],
     help="The renewal offer PDF provided by BCBSTX.",
-    label_visibility="visible",
 )
 
 if uploaded_file is None:
-    st.info("👆 Upload a renewal PDF above to get started. Files are processed in memory and immediately discarded.")
+    st.info("👆 Upload a renewal PDF above to get started. Your file is never saved to our servers — it's processed and immediately discarded.")
     st.stop()
 
 st.write(f"📄 **{uploaded_file.name}**  —  {uploaded_file.size / 1_024:.0f} KB")
 st.markdown("---")
 
-
 # ── Extract buttons ────────────────────────────────────────────────────────────
 if "play_music" not in st.session_state:
     st.session_state.play_music = False
 
-btn_col1, btn_col2, _ = st.columns([2, 2.4, 5])
+btn_col1, btn_col2, _ = st.columns([2, 2, 5])
 with btn_col1:
     extract_btn = st.button(
         "⚡ Extract Renewal",
@@ -117,10 +103,10 @@ with btn_col1:
     )
 with btn_col2:
     music_btn = st.button(
-        "🎵 Extract with Jeopardy Music",
+        "🎵 Extract with Music",
         type="secondary",
         use_container_width=True,
-        help="Plays the Jeopardy Think! theme while the extractor runs. Hold tight.",
+        help="Plays the Jeopardy Think! theme while the extractor runs.",
     )
 
 do_extraction = extract_btn or music_btn
@@ -132,80 +118,22 @@ elif extract_btn:
 if not do_extraction:
     st.stop()
 
+# ── Audio slot — filled before extraction, cleared after to stop playback ──────
+audio_slot = st.empty()
 
-# ── Jeopardy Think! music (Web Audio API — no external files or copyright issues) ──
-# Notes are synthesized in the browser via the Web Audio API.
-# The iframe is removed by Streamlit on the next page rerun, which stops playback.
 if st.session_state.play_music:
-    components.html("""
-    <script>
-    (function () {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        if (!AC) return;
-        const ctx = new AC();
-
-        // BPM = 118; beat = one quarter note in seconds
-        const beat = 60 / 118;
-
-        // Jeopardy "Think!" theme — approximate transcription
-        // Format: [frequency_Hz, duration_in_quarter_note_beats]
-        const phrase = [
-            // Bar 1
-            [392, 1], [523, 1], [392, 1], [262, 1],
-            // Bar 2
-            [392, 1], [523, 1], [659, 1], [784, 1],
-            // Bar 3 (descending run)
-            [698, 0.5], [659, 0.5], [587, 0.5], [523, 0.5],
-            [494, 0.5], [523, 0.5], [587, 0.5], [659, 0.5],
-            // Bar 4 (repeat of bar 1)
-            [392, 1], [523, 1], [392, 1], [262, 1],
-            // Bar 5
-            [392, 1], [523, 1], [659, 2],
-            // Bar 6
-            [587, 1], [523, 1], [494, 1], [440, 1],
-            // Bar 7 – resolve
-            [392, 2], [0, 1],
-            // Second half mirrors first with slight variation
-            [392, 1], [523, 1], [392, 1], [262, 1],
-            [392, 1], [523, 1], [659, 1], [784, 1],
-            [784, 0.5], [698, 0.5], [659, 0.5], [587, 0.5],
-            [523, 0.5], [494, 0.5], [440, 0.5], [392, 0.5],
-            [392, 1], [523, 1], [392, 1], [262, 1],
-            [392, 1], [523, 1], [698, 2],
-            [659, 1], [587, 1], [523, 1], [494, 1],
-            [392, 2], [0, 1],
-        ];
-
-        // Phase total duration in seconds
-        const totalBeats = phrase.reduce((s, [, d]) => s + d, 0);
-
-        function schedulePhrase(startT) {
-            let t = startT;
-            phrase.forEach(([freq, dur]) => {
-                if (freq > 0) {
-                    const osc  = ctx.createOscillator();
-                    const gain = ctx.createGain();
-                    osc.connect(gain);
-                    gain.connect(ctx.destination);
-                    osc.type = 'sine';
-                    osc.frequency.setValueAtTime(freq, t);
-                    gain.gain.setValueAtTime(0.22, t);
-                    gain.gain.exponentialRampToValueAtTime(0.001, t + dur * beat * 0.88);
-                    osc.start(t);
-                    osc.stop(t + dur * beat);
-                }
-                t += dur * beat;
-            });
-            // Schedule next loop 200 ms before this one ends so there is no gap
-            const msUntilEnd = (startT + totalBeats * beat - ctx.currentTime) * 1000 - 200;
-            setTimeout(() => schedulePhrase(startT + totalBeats * beat), msUntilEnd);
-        }
-
-        schedulePhrase(ctx.currentTime + 0.05);
-    })();
-    </script>
-    """, height=0)
-
+    mp3_path = Path(__file__).parent / "jeopardy-themelq.mp3"
+    try:
+        mp3_b64 = base64.b64encode(mp3_path.read_bytes()).decode()
+        audio_html = f"""
+        <audio autoplay>
+            <source src="data:audio/mpeg;base64,{mp3_b64}" type="audio/mpeg">
+        </audio>
+        """
+        with audio_slot:
+            components.html(audio_html, height=0)
+    except FileNotFoundError:
+        pass  # MP3 not present — silently skip music
 
 # ── Extraction ─────────────────────────────────────────────────────────────────
 with st.spinner("Extracting renewal data… this usually takes about 30 seconds. Hang tight."):
@@ -220,9 +148,13 @@ with st.spinner("Extracting renewal data… this usually takes about 30 seconds.
             excel_bytes = Path(result["excel_path"]).read_bytes()
             json_bytes  = Path(result["json_path"]).read_bytes()
         except Exception as exc:
+            audio_slot.empty()  # stop music on error too
             st.error("The extractor could not process this PDF. See the error details below.")
             st.exception(exc)
             st.stop()
+
+# Stop the music now that extraction is done
+audio_slot.empty()
 
 st.success("✅ Extraction complete!")
 
@@ -230,17 +162,15 @@ group       = data.get("group_info",  {}) or {}
 plans       = data.get("plans",       []) or []
 census_rows = data.get("census_rows", []) or []
 
-
 # ── Summary metrics ────────────────────────────────────────────────────────────
 st.markdown("### Group Summary")
 mc1, mc2, mc3, mc4 = st.columns(4)
-mc1.metric("Group",        group.get("group_name") or group.get("mailing_name") or "Not found")
-mc2.metric("Rating Type",  str(data.get("rating_type", "unknown")).upper())
-mc3.metric("Plans Found",  len(plans))
-mc4.metric("Census Rows",  len(census_rows))
+mc1.metric("Group",       group.get("group_name") or group.get("mailing_name") or "Not found")
+mc2.metric("Rating Type", str(data.get("rating_type", "unknown")).upper())
+mc3.metric("Plans Found", len(plans))
+mc4.metric("Census Rows", len(census_rows))
 
 st.markdown("---")
-
 
 # ── Downloads ──────────────────────────────────────────────────────────────────
 st.markdown("### Downloads")
@@ -255,7 +185,7 @@ with dl1:
         use_container_width=True,
     )
 
-# ── JSON download — code preserved; surfaced once SHOW_JSON_DOWNLOAD = True ──
+# JSON download — code preserved; surfaced once SHOW_JSON_DOWNLOAD = True
 if SHOW_JSON_DOWNLOAD:
     with dl2:
         st.download_button(
@@ -268,19 +198,17 @@ if SHOW_JSON_DOWNLOAD:
 
 st.markdown("---")
 
-
 # ── Validation notes ───────────────────────────────────────────────────────────
 st.markdown("### Validation Notes")
 validation_df = build_validation_notes(data)
 
-def _style_validation(df: pd.DataFrame) -> pd.io.formats.style.Styler:
+def _style_validation(df: pd.DataFrame):
     def row_color(row):
         color = "#fff3cd" if row["Severity"] == "Warning" else "#d1fae5"
         return [f"background-color: {color}"] * len(row)
     return df.style.apply(row_color, axis=1)
 
 st.dataframe(_style_validation(validation_df), use_container_width=True, hide_index=True)
-
 
 # ── Plan summary ───────────────────────────────────────────────────────────────
 st.markdown("### Plan Summary")
@@ -290,7 +218,6 @@ if plan_df.empty:
 else:
     st.dataframe(plan_df, use_container_width=True, hide_index=True)
 
-
 # ── Census preview ─────────────────────────────────────────────────────────────
 with st.expander("📋 Census Preview"):
     census_df = pd.DataFrame(census_rows)
@@ -299,10 +226,9 @@ with st.expander("📋 Census Preview"):
     else:
         st.dataframe(census_df, use_container_width=True, hide_index=True)
 
-
 # ── Footer ─────────────────────────────────────────────────────────────────────
 st.markdown(
     '<p class="footer-cap">BCBSTX Renewal Extractor · No AI used · '
-    'Files are processed in memory and never stored</p>',
+    'Your file is never saved to our servers — it\'s processed and immediately discarded</p>',
     unsafe_allow_html=True,
 )
